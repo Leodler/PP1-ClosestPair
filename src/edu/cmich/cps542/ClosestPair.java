@@ -1,6 +1,7 @@
 package edu.cmich.cps542;
 
 import java.io.FileNotFoundException;
+import java.lang.reflect.Array;
 import java.util.ArrayList;
 import java.io.File;
 import java.util.Iterator;
@@ -12,9 +13,9 @@ public class ClosestPair {
 	public static void main(String[] args) throws FileNotFoundException {
 	
 		/* load data from points.txt here */
-		File pointsFile = new File("points2.txt");
+		File pointsFile = new File("points.txt");
 		Scanner sc = new Scanner(pointsFile);
-		List<Point> points = new ArrayList<Point>();
+		ArrayList<Point> points = new ArrayList<Point>();
 
 		while(sc.hasNextLine()) {
 			String line = sc.nextLine();
@@ -22,10 +23,16 @@ public class ClosestPair {
 		}
 
 		/* use your sort method here */
-		List<Point> pointsSortedY = sortY(points);
-		List<Point> pointsSortedX = sort(points);
+		ArrayList<Point> pointsSortedY = sortY(points);
+		ArrayList<Point> pointsSortedX = sort(points);
 		/* call efficientClosestPair here */
 		PointPair pMin = efficientClosestPair(pointsSortedX, pointsSortedY);
+		System.out.println(pMin);
+		System.out.println(Double.toString(pMin.distSqrdBetweenPoints()));
+		System.out.println();
+		PointPair pMinBruteforce = bruteClosestPair(points);
+		System.out.println(pMinBruteforce);
+		System.out.println(pMinBruteforce.distSqrdBetweenPoints());
 
 	}
 
@@ -34,32 +41,44 @@ public class ClosestPair {
 				.replace("(", "")
 				.replace(" ", "");
 		String[] strPoints = line.split(",");
+
 		return new Point(Double.parseDouble(strPoints[0]), Double.parseDouble(strPoints[1]));
 	}
 
-	public static PointPair efficientClosestPair(List<Point> pointsXOrdered, List<Point> pointsYOrdered) {
+	public static PointPair efficientClosestPair(ArrayList<Point> pointsXOrdered, ArrayList<Point> pointsYOrdered) {
 		// Base Case(s)
 		int n = pointsXOrdered.size();
-		if(n == 2) return new PointPair(pointsXOrdered.get(0), pointsXOrdered.get(1));
-		if(n == 3) return bruteClosestPair(pointsXOrdered);
+		if(n <= 3) return bruteClosestPair(pointsXOrdered);
 
 		// Divide into subproblems
-		int mid = n / 2;
-		PointPair deltaPair = new PointPair(new Point(0, 0), new Point(0, 0));
-		Point midPoint = pointsXOrdered.get(mid);
-		double deltaLeft = efficientClosestPair(pointsXOrdered.subList(0,mid), sortY(pointsXOrdered.subList(0, mid))).distSqrdBetweenPoints();
-		double deltaRight = efficientClosestPair(pointsXOrdered.subList(mid,n), sortY(pointsXOrdered.subList(mid,n))).distSqrdBetweenPoints();
-		double delta = Double.min(deltaLeft, deltaRight);
-		System.out.println("Delta: " + delta);
+		int mid = (n - 1) / 2;
+		PointPair deltaPair;
+		double delta;
+		ArrayList<Point> leftOfCenter = sliceArrayList(pointsXOrdered, 0, mid);
+		ArrayList<Point> rightOfCenter = sliceArrayList(pointsXOrdered, mid, n);
+
+		PointPair deltaLeft = efficientClosestPair(leftOfCenter, sortY(leftOfCenter));
+		PointPair deltaRight = efficientClosestPair(rightOfCenter, sortY(rightOfCenter));
+		Point midPoint = rightOfCenter.get(0);
+		if(deltaRight.distSqrdBetweenPoints() < deltaLeft.distSqrdBetweenPoints()) {
+			deltaPair = deltaRight;
+			delta = deltaRight.distSqrdBetweenPoints();
+		} else {
+			deltaPair = deltaLeft;
+			delta = deltaLeft.distSqrdBetweenPoints();
+		}
 
 
 		// Combine subproblem solutions
 		List<Point> eligiblePoints = cutSortedY(pointsYOrdered, midPoint, delta);
-		for(int i = 0; i < eligiblePoints.size(); i++) {
-			for(int j = 1; j < eligiblePoints.size(); j++) {
-				double pairDist = distance(eligiblePoints.get(i), eligiblePoints.get(j));
-				if(pairDist < delta) {
-					delta = pairDist;
+		for(int i = 0; i < eligiblePoints.size() - 1; i++) {
+			for(int j = i+1; j < eligiblePoints.size(); j++) {
+				if(eligiblePoints.get(j).y - eligiblePoints.get(i).y >= delta) {
+					break;
+				}
+				double dist = distance(eligiblePoints.get(i), eligiblePoints.get(j));
+				if(dist < delta && dist != 0.0) {
+					delta = dist;
 					deltaPair = new PointPair(eligiblePoints.get(i), eligiblePoints.get(j));
 				}
 			}
@@ -71,14 +90,12 @@ public class ClosestPair {
 
 	public static List<Point> cutSortedY(List<Point> pointsYOrdered, Point midPoint, double delta) {
 		List<Point> eligiblePoints = new ArrayList<Point>();
-		double max = midPoint.x + delta;
-		double min = midPoint.x - delta;
 		Iterator<Point> sortedYIterator = pointsYOrdered.iterator();
 		while(sortedYIterator.hasNext()){
 			Point p1 = sortedYIterator.next();
-			if(p1.y < min) continue;
-			if(p1.y > max) break;
-			eligiblePoints.add(p1);
+			if(Math.abs(midPoint.x - p1.x) < delta) {
+				eligiblePoints.add(p1);
+			}
 		}
 		return eligiblePoints;
 	}
@@ -86,12 +103,14 @@ public class ClosestPair {
 	public static PointPair bruteClosestPair(List<Point> points) {
 		double minDist = Double.MAX_VALUE;
 		double dist;
-		PointPair minDistPair = new PointPair(new Point(0, 0), new Point(0, 0));
+		PointPair minDistPair = new PointPair(new Point(0, 0), new Point(1000000, 1000000));
 		for(int i = 0; i < points.size() - 1; i++){
 			for(int j = i + 1; j < points.size(); j++) {
 				dist = distance(points.get(i), points.get(j));
-				minDist = Math.min(dist, minDist);
-				minDistPair = new PointPair(points.get(i), points.get(j));
+				if(minDist > dist && dist != 0) {
+					minDist = dist;
+					minDistPair = new PointPair(points.get(i), points.get(j));
+				}
 			}
 		}
 
@@ -100,39 +119,39 @@ public class ClosestPair {
 	}
 	
 	
-	public static List<Point> sort(List<Point> points) {
+	public static ArrayList<Point> sort(ArrayList<Point> points) {
 		if(points.size() < 2){
 			return points;
 		}
 		int mid = points.size() / 2;
-		List<Point> left = points.subList(0, mid);
-		List<Point> right = points.subList(mid, points.size());
+		ArrayList<Point> left = sliceArrayList(points, 0, mid);
+		ArrayList<Point> right = sliceArrayList(points, mid, points.size());
 
 		right = sort(right);
 		left = sort(left);
 
-		List<Point> sorted = merge(left, right);
+		ArrayList<Point> sorted = merge(left, right);
 		
 		return sorted;
 	}
-	public static List<Point> sortY(List<Point> points) {
+	public static ArrayList<Point> sortY(ArrayList<Point> points) {
 		if(points.size() < 2){
 			return points;
 		}
 		int mid = points.size() / 2;
-		List<Point> left = points.subList(0, mid);
-		List<Point> right = points.subList(mid, points.size());
+		ArrayList<Point> left = sliceArrayList(points, 0, mid);
+		ArrayList<Point> right = sliceArrayList(points, mid, points.size());
 
 		right = sortY(right);
 		left = sortY(left);
 
-		List<Point> sorted = mergeY(left, right);
+		ArrayList<Point> sorted = mergeY(left, right);
 
 		return sorted;
 	}
 
-	public static List<Point> merge(List<Point> left, List<Point> right){
-		List<Point> sorted = new ArrayList<>();
+	public static ArrayList<Point> merge(ArrayList<Point> left, ArrayList<Point> right){
+		ArrayList<Point> sorted = new ArrayList<>();
 		Iterator<Point> leftIterator = left.iterator();
 		Iterator<Point> rightIterator = right.iterator();
 
@@ -167,8 +186,8 @@ public class ClosestPair {
 		return sorted;
 	}
 
-	public static List<Point> mergeY(List<Point> left, List<Point> right){
-		List<Point> sorted = new ArrayList<>();
+	public static ArrayList<Point> mergeY(ArrayList<Point> left, ArrayList<Point> right){
+		ArrayList<Point> sorted = new ArrayList<>();
 		Iterator<Point> leftIterator = left.iterator();
 		Iterator<Point> rightIterator = right.iterator();
 
@@ -201,6 +220,14 @@ public class ClosestPair {
 			}
 		}
 		return sorted;
+	}
+
+	public static ArrayList<Point> sliceArrayList(ArrayList <Point> points, int start, int end) {
+		ArrayList<Point> slicedPoints = new ArrayList<Point>();
+		for(int i = start; i < end; i++) {
+			slicedPoints.add(points.get(i));
+		}
+		return slicedPoints;
 	}
 
 	public static double distance(Point p1, Point p2) {
